@@ -87,7 +87,7 @@ if uploaded_file:
             desc['Median'] = df.median()
             desc['Std Dev'] = df.std()
             desc['Range'] = df.max() - df.min()
-            desc['Mean Abs Dev'] = df.mad()
+            desc['Mean Abs Dev'] = df.apply(lambda x: x.mad())
             desc['25% Quantile'] = df.quantile(0.25)
             desc['75% Quantile'] = df.quantile(0.75)
             desc['IQR'] = desc['75% Quantile'] - desc['25% Quantile']
