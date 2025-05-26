@@ -1,191 +1,112 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import numpy as np
 
-st.set_page_config(page_title="Flexible Health Data Analyzer", layout="wide")
-st.title("📊 Flexible Health Data Analyzer")
+st.set_page_config(page_title="Health Data Analyzer", layout="wide")
 
-uploaded_file = st.file_uploader(
-    "Upload your health data file (CSV, Excel, TSV, JSON)", 
-    type=["csv", "xlsx", "xls", "tsv", "json"]
-)
+st.title("Health Data Analyzer")
 
-def mean_abs_dev(series):
-    return (series - series.mean()).abs().mean()
+# Sidebar - Report options
+st.sidebar.header("Report Options")
+report_type = st.sidebar.selectbox("Select Report Type", ["Weekly", "Monthly", "Quarterly", "Yearly"])
+analysis_type = st.sidebar.multiselect("Select Type of Analysis", ["Summary", "Statistical Measures", "Trends", "Gaps", "KPIs"])
+chart_type = st.sidebar.selectbox("Select Chart Type", ["Bar", "Line", "Box", "Histogram", "Pie"])
 
-def descriptive_stats(df):
-    desc = pd.DataFrame()
-    desc['Mean'] = df.mean()
-    desc['Median'] = df.median()
-    desc['Std Dev'] = df.std()
-    desc['Range'] = df.max() - df.min()
-    desc['Mean Abs Dev'] = df.apply(mean_abs_dev)
-    desc['25% Quantile'] = df.quantile(0.25)
-    desc['75% Quantile'] = df.quantile(0.75)
-    desc['IQR'] = desc['75% Quantile'] - desc['25% Quantile']
-    desc['Coeff of Var (%)'] = (desc['Std Dev'] / desc['Mean']) * 100
-    desc['Skewness'] = df.skew()
-    desc['Kurtosis'] = df.kurtosis()
-    return desc
+# File uploader
+uploaded_file = st.file_uploader("Upload your health data file (CSV or Excel)", type=["csv", "xlsx"])
 
-def plot_histogram(df, col, title, color):
-    fig, ax = plt.subplots()
-    df[col].hist(ax=ax, bins=20, color=color)
-    ax.set_title(title)
-    st.pyplot(fig)
-
-def plot_boxplot(df, col, title, color):
-    fig, ax = plt.subplots()
-    sns.boxplot(x=df[col], ax=ax, color=color)
-    ax.set_title(title)
-    st.pyplot(fig)
-
-def plot_line(df, col, title, color):
-    fig, ax = plt.subplots()
-    df[col].plot.line(ax=ax, color=color)
-    ax.set_title(title)
-    st.pyplot(fig)
-
-def plot_bar(df, col, title, color):
-    fig, ax = plt.subplots()
-    counts = df[col].value_counts()
-    counts.plot(kind='bar', ax=ax, color=color)
-    ax.set_title(title)
-    st.pyplot(fig)
-
-def plot_heatmap(df, cols, title, cmap):
-    fig, ax = plt.subplots(figsize=(10, 6))
-    sns.heatmap(df[cols].corr(), annot=True, cmap=cmap, ax=ax)
-    ax.set_title(title)
-    st.pyplot(fig)
-
+# Main logic
 if uploaded_file:
     try:
-        file_type = uploaded_file.name.split('.')[-1].lower()
-        
-        if file_type == 'csv':
+        if uploaded_file.name.endswith(".csv"):
             df = pd.read_csv(uploaded_file)
-        elif file_type in ['xlsx', 'xls']:
+        else:
             df = pd.read_excel(uploaded_file)
-        elif file_type == 'tsv':
-            df = pd.read_csv(uploaded_file, sep='\t')
-        elif file_type == 'json':
-            df = pd.read_json(uploaded_file)
-        else:
-            st.error("Unsupported file type.")
-            st.stop()
 
-        st.success(f"Loaded {file_type.upper()} file successfully!")
-        
-        with st.expander("Show Raw Data"):
-            st.dataframe(df.head())
+        st.subheader("Raw Data")
+        st.dataframe(df)
 
-        # التعرف على أعمدة التاريخ والتهيئة
-        date_cols = [c for c in df.columns if 'date' in c.lower()]
-        for col in date_cols:
-            df[col] = pd.to_datetime(df[col], errors='coerce')
+        columns = st.multiselect("Select columns for analysis", df.columns.tolist(), default=df.columns.tolist())
 
-        # تخطيط الأعمدة لاختيار بشكل مرتب باستخدام عمودين
-        left_col, right_col = st.columns(2)
+        if "Summary" in analysis_type:
+            st.subheader("Summary Statistics")
+            st.write(df[columns].describe())
 
-        with left_col:
-            # اختيار عمود التاريخ
-            date_col = None
-            if date_cols:
-                date_col = st.selectbox("Select date column for resampling (if any)", date_cols)
+        if "Statistical Measures" in analysis_type:
+            st.subheader("Statistical Measures")
+            stats_df = pd.DataFrame({
+                "Mean": df[columns].mean(),
+                "Median": df[columns].median(),
+                "Std Deviation": df[columns].std(),
+                "Variance": df[columns].var(),
+                "Min": df[columns].min(),
+                "Max": df[columns].max(),
+                "Range": df[columns].max() - df[columns].min(),
+                "IQR": df[columns].quantile(0.75) - df[columns].quantile(0.25)
+            })
+            st.dataframe(stats_df)
 
-            report_freq = st.selectbox("Select report frequency", ["Weekly", "Monthly", "Quarterly", "Yearly"])
+        if "Trends" in analysis_type:
+            st.subheader("Trend Visualization")
+            time_col = st.selectbox("Select time-related column", df.columns)
+            value_col = st.selectbox("Select value column", columns)
+            trend_df = df[[time_col, value_col]].dropna()
+            trend_df = trend_df.groupby(time_col)[value_col].mean().reset_index()
 
-            analysis_types = [
-                "Descriptive Statistics",
-                "Time Series",
-                "Correlation Heatmap",
-                "Numerical Distribution",
-                "Categorical Distribution"
-            ]
-            selected_analysis = st.multiselect("Select analysis types", analysis_types, default=["Descriptive Statistics"])
+            if chart_type == "Line":
+                fig, ax = plt.subplots()
+                ax.plot(trend_df[time_col], trend_df[value_col])
+                ax.set_title(f"{value_col} Over Time")
+                st.pyplot(fig)
 
-        with right_col:
-            all_numeric_cols = df.select_dtypes(include='number').columns.tolist()
-            all_cat_cols = df.select_dtypes(include=['object', 'category', 'bool']).columns.tolist()
+        if "KPIs" in analysis_type:
+            st.subheader("Key Performance Indicators")
+            kpi_col = st.selectbox("Select column for KPI visualization", columns)
+            st.metric(label=f"Mean of {kpi_col}", value=round(df[kpi_col].mean(), 2))
+            st.metric(label=f"Max of {kpi_col}", value=round(df[kpi_col].max(), 2))
+            st.metric(label=f"Min of {kpi_col}", value=round(df[kpi_col].min(), 2))
 
-            numeric_cols = []
-            cat_cols = []
+        if "Gaps" in analysis_type:
+            st.subheader("Missing Values and Gaps")
+            st.write(df[columns].isnull().sum())
 
-            if any(a in selected_analysis for a in ["Descriptive Statistics", "Numerical Distribution", "Time Series", "Correlation Heatmap"]):
-                use_all_num = st.checkbox("Use all numeric columns?", value=True)
-                if use_all_num:
-                    numeric_cols = all_numeric_cols
-                else:
-                    numeric_cols = st.multiselect("Select numeric columns", all_numeric_cols)
+        # Chart customization
+        st.subheader("Custom Chart")
+        x_col = st.selectbox("X-axis", columns)
+        y_col = st.selectbox("Y-axis", columns)
+        title = st.text_input("Chart Title", "Custom Chart")
+        color = st.color_picker("Chart Color", "#69b3a2")
 
-            if "Categorical Distribution" in selected_analysis:
-                use_all_cat = st.checkbox("Use all categorical columns?", value=True)
-                if use_all_cat:
-                    cat_cols = all_cat_cols
-                else:
-                    cat_cols = st.multiselect("Select categorical columns", all_cat_cols)
-
-        freq_map = {
-            "Weekly": "W",
-            "Monthly": "M",
-            "Quarterly": "Q",
-            "Yearly": "Y"
-        }
-        # تجهيز البيانات بناءً على التردد
-        if date_col and report_freq and "Time Series" in selected_analysis:
-            df = df.sort_values(by=date_col)
-            df = df.dropna(subset=[date_col])
-            df.set_index(date_col, inplace=True)
-            resampled_df = df.resample(freq_map[report_freq]).mean()
-        else:
-            resampled_df = df
-
-        # عرض الإحصائيات الوصفية
-        if "Descriptive Statistics" in selected_analysis and numeric_cols:
-            st.subheader("Descriptive Statistics")
-            stats = descriptive_stats(df[numeric_cols])
-            st.dataframe(stats.style.background_gradient(cmap='Blues'))
-
-        # عرض التحليل الزمني
-        if "Time Series" in selected_analysis and numeric_cols and date_col:
-            st.subheader(f"Time Series Analysis (Resampled {report_freq})")
-            for col in numeric_cols:
-                st.markdown(f"**{col}**")
-                st.line_chart(resampled_df[col].dropna())
-
-        # عرض خريطة الارتباط
-        if "Correlation Heatmap" in selected_analysis and len(numeric_cols) > 1:
-            st.subheader("Correlation Heatmap")
-            cmap = st.color_picker("Pick colormap for heatmap", "#FF5733")
-            plot_heatmap(df, numeric_cols, "Correlation Heatmap", cmap)
-
-        # التوزيعات الرقمية مع خيارات رسم بياني منسقة في expander
-        if "Numerical Distribution" in selected_analysis and numeric_cols:
-            st.subheader("Numerical Data Distribution")
-            for col in numeric_cols:
-                with st.expander(f"Chart options for {col}"):
-                    chart_type = st.selectbox(f"Select chart type for '{col}'", ["Histogram", "Boxplot"], key=f"num_chart_{col}")
-                    chart_title = st.text_input(f"Chart title for '{col}'", f"{chart_type} of {col}", key=f"title_num_{col}")
-                    chart_color = st.color_picker(f"Pick color for '{col}' chart", "#1f77b4", key=f"color_num_{col}")
-                    if chart_type == "Histogram":
-                        plot_histogram(df, col, chart_title, chart_color)
-                    else:
-                        plot_boxplot(df, col, chart_title, chart_color)
-
-        # التوزيعات الفئوية بنفس الطريقة
-        if "Categorical Distribution" in selected_analysis and cat_cols:
-            st.subheader("Categorical Data Distribution")
-            for col in cat_cols:
-                with st.expander(f"Chart options for {col}"):
-                    chart_title = st.text_input(f"Chart title for '{col}'", f"Bar chart of {col}", key=f"title_cat_{col}")
-                    chart_color = st.color_picker(f"Pick color for '{col}' chart", "#ff7f0e", key=f"color_cat_{col}")
-                    plot_bar(df, col, chart_title, chart_color)
+        if chart_type == "Bar":
+            fig, ax = plt.subplots()
+            ax.bar(df[x_col], df[y_col], color=color)
+            ax.set_title(title)
+            st.pyplot(fig)
+        elif chart_type == "Line":
+            fig, ax = plt.subplots()
+            ax.plot(df[x_col], df[y_col], color=color)
+            ax.set_title(title)
+            st.pyplot(fig)
+        elif chart_type == "Box":
+            fig, ax = plt.subplots()
+            sns.boxplot(x=df[x_col], y=df[y_col], color=color, ax=ax)
+            ax.set_title(title)
+            st.pyplot(fig)
+        elif chart_type == "Histogram":
+            fig, ax = plt.subplots()
+            ax.hist(df[y_col], bins=20, color=color)
+            ax.set_title(title)
+            st.pyplot(fig)
+        elif chart_type == "Pie":
+            pie_data = df[y_col].value_counts()
+            fig, ax = plt.subplots()
+            ax.pie(pie_data, labels=pie_data.index, colors=[color]*len(pie_data), autopct="%1.1f%%")
+            ax.set_title(title)
+            st.pyplot(fig)
 
     except Exception as e:
         st.error(f"Error processing file: {e}")
-
 else:
-    st.info("Please upload a file to start analysis.")
+    st.info("Please upload a CSV or Excel file to get started.")
