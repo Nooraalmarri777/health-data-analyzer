@@ -5,43 +5,44 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 
-st.set_page_config(page_title="Advanced Health Data Analyzer", layout="wide")
-st.title("Advanced Health Data Analyzer")
+st.set_page_config(page_title="Customizable Health Data Analyzer", layout="wide")
+st.title("Customizable Health Data Analyzer")
 
 uploaded_file = st.file_uploader(
     "Upload your health data file (CSV, Excel, TSV, JSON)", 
     type=["csv", "xlsx", "xls", "tsv", "json"]
 )
 
-def plot_categorical(df, col):
-    counts = df[col].value_counts()
+def plot_histogram(df, col, title, color):
     fig, ax = plt.subplots()
-    counts.plot(kind='bar', ax=ax)
-    ax.set_title(f"Bar chart of {col}")
+    df[col].hist(ax=ax, bins=20, color=color)
+    ax.set_title(title)
     st.pyplot(fig)
 
-def plot_numerical(df, col):
-    fig, axs = plt.subplots(1, 2, figsize=(12,4))
-    df[col].hist(ax=axs[0], bins=20)
-    axs[0].set_title(f"Histogram of {col}")
-    sns.boxplot(x=df[col], ax=axs[1])
-    axs[1].set_title(f"Boxplot of {col}")
+def plot_boxplot(df, col, title, color):
+    fig, ax = plt.subplots()
+    sns.boxplot(x=df[col], ax=ax, color=color)
+    ax.set_title(title)
     st.pyplot(fig)
 
-def descriptive_stats(df):
-    desc = pd.DataFrame()
-    desc['Mean'] = df.mean()
-    desc['Median'] = df.median()
-    desc['Std Dev'] = df.std()
-    desc['Range'] = df.max() - df.min()
-    desc['Mean Abs Dev'] = df.mad()
-    desc['25% Quantile'] = df.quantile(0.25)
-    desc['75% Quantile'] = df.quantile(0.75)
-    desc['IQR'] = desc['75% Quantile'] - desc['25% Quantile']
-    desc['Coeff of Var (%)'] = (desc['Std Dev'] / desc['Mean']) * 100
-    desc['Skewness'] = df.skew()
-    desc['Kurtosis'] = df.kurtosis()
-    return desc
+def plot_line(df, col, title, color):
+    fig, ax = plt.subplots()
+    df[col].plot.line(ax=ax, color=color)
+    ax.set_title(title)
+    st.pyplot(fig)
+
+def plot_bar(df, col, title, color):
+    fig, ax = plt.subplots()
+    counts = df[col].value_counts()
+    counts.plot(kind='bar', ax=ax, color=color)
+    ax.set_title(title)
+    st.pyplot(fig)
+
+def plot_heatmap(df, cols, title, cmap):
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.heatmap(df[cols].corr(), annot=True, cmap=cmap, ax=ax)
+    ax.set_title(title)
+    st.pyplot(fig)
 
 if uploaded_file:
     try:
@@ -68,17 +69,40 @@ if uploaded_file:
             if 'date' in col.lower():
                 df[col] = pd.to_datetime(df[col], errors='coerce')
 
-        st.subheader("Data Types")
-        st.write(df.dtypes)
-
-        st.subheader("Automatic Data Analysis")
+        st.subheader("Select Analyses to Perform")
+        analyses = st.multiselect(
+            "Choose analysis types",
+            options=["Descriptive Statistics", "Time Series Analysis", "Correlation Heatmap", "Numerical Data Distribution", "Categorical Data Distribution"],
+            default=["Descriptive Statistics"]
+        )
 
         date_cols = [c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])]
         numeric_cols = df.select_dtypes(include='number').columns.tolist()
         categorical_cols = df.select_dtypes(include=['object', 'category', 'bool']).columns.tolist()
 
-        if date_cols and numeric_cols:
-            st.markdown("### Time Series Analysis")
+        # Descriptive Statistics
+        def descriptive_stats(df):
+            desc = pd.DataFrame()
+            desc['Mean'] = df.mean()
+            desc['Median'] = df.median()
+            desc['Std Dev'] = df.std()
+            desc['Range'] = df.max() - df.min()
+            desc['Mean Abs Dev'] = df.mad()
+            desc['25% Quantile'] = df.quantile(0.25)
+            desc['75% Quantile'] = df.quantile(0.75)
+            desc['IQR'] = desc['75% Quantile'] - desc['25% Quantile']
+            desc['Coeff of Var (%)'] = (desc['Std Dev'] / desc['Mean']) * 100
+            desc['Skewness'] = df.skew()
+            desc['Kurtosis'] = df.kurtosis()
+            return desc
+
+        if "Descriptive Statistics" in analyses and numeric_cols:
+            st.subheader("Descriptive Statistics")
+            stats = descriptive_stats(df[numeric_cols])
+            st.dataframe(stats)
+
+        if "Time Series Analysis" in analyses and date_cols and numeric_cols:
+            st.subheader("Time Series Analysis")
             for date_col in date_cols:
                 df_sorted = df.sort_values(by=date_col)
                 df_sorted = df_sorted.dropna(subset=[date_col])
@@ -86,27 +110,33 @@ if uploaded_file:
                 freq = st.selectbox(f"Select frequency for resampling based on '{date_col}'", ['D', 'W', 'M', 'Q', 'Y'], index=2)
                 resampled = df_sorted[numeric_cols].resample(freq).mean()
                 for col in numeric_cols:
+                    st.markdown(f"**{col}**")
                     st.line_chart(resampled[col], use_container_width=True)
 
-        if len(numeric_cols) > 1:
-            st.markdown("### Correlation Heatmap")
-            fig, ax = plt.subplots(figsize=(10, 6))
-            sns.heatmap(df[numeric_cols].corr(), annot=True, cmap="coolwarm", ax=ax)
-            st.pyplot(fig)
+        if "Correlation Heatmap" in analyses and len(numeric_cols) > 1:
+            st.subheader("Correlation Heatmap")
+            cmap = st.color_picker("Pick colormap for heatmap", "#FF5733")
+            plot_heatmap(df, numeric_cols, "Correlation Heatmap", cmap)
 
-        if numeric_cols:
-            st.markdown("### Numerical Data Distribution")
-            for col in numeric_cols:
-                plot_numerical(df, col)
+        if "Numerical Data Distribution" in analyses and numeric_cols:
+            st.subheader("Numerical Data Distribution")
+            selected_num_cols = st.multiselect("Select numeric columns to plot", numeric_cols, default=numeric_cols[:2])
+            chart_type_num = st.selectbox("Select chart type for numeric data", ["Histogram", "Boxplot"])
+            color_num = st.color_picker("Pick color for numeric charts", "#1f77b4")
+            for col in selected_num_cols:
+                title = st.text_input(f"Chart title for {col}", f"{chart_type_num} of {col}")
+                if chart_type_num == "Histogram":
+                    plot_histogram(df, col, title, color_num)
+                else:
+                    plot_boxplot(df, col, title, color_num)
 
-            st.markdown("### Descriptive Statistics")
-            stats = descriptive_stats(df[numeric_cols])
-            st.dataframe(stats)
-
-        if categorical_cols:
-            st.markdown("### Categorical Data Distribution")
-            for col in categorical_cols:
-                plot_categorical(df, col)
+        if "Categorical Data Distribution" in analyses and categorical_cols:
+            st.subheader("Categorical Data Distribution")
+            selected_cat_cols = st.multiselect("Select categorical columns to plot", categorical_cols, default=categorical_cols[:2])
+            color_cat = st.color_picker("Pick color for categorical charts", "#ff7f0e")
+            for col in selected_cat_cols:
+                title = st.text_input(f"Chart title for {col}", f"Bar chart of {col}")
+                plot_bar(df, col, title, color_cat)
 
         st.markdown("### Missing Values")
         missing = df.isnull().sum()
